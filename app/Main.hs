@@ -1,8 +1,7 @@
 module Main where
 
 import Lib
-import Storage.Eaches
-import qualified Storage.Exx
+import qualified Storage.Eaches
 
 main :: IO ()
-main = Storage.Exx.main
+main = Storage.Eaches.runner
