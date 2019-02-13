@@ -1,0 +1,5 @@
+.stack-work/
+stack-fun.cabal
+*~
+.idea/
+out/
