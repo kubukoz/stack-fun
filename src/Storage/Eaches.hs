@@ -1,11 +1,13 @@
 {-# LANGUAGE ConstraintKinds            #-}
 {-# LANGUAGE EmptyDataDecls             #-}
 {-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE FunctionalDependencies     #-}
 {-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE QuasiQuotes                #-}
+{-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE TemplateHaskell            #-}
 {-# LANGUAGE TypeFamilies               #-}
 
@@ -18,7 +20,7 @@ import           Control.Monad.IO.Class               (MonadIO, liftIO)
 import           Control.Monad.Logger
 import           Control.Monad.Reader
 import           Control.Monad.Reader.Class
-import           Control.Monad.Trans.Control          (MonadBaseControl)
+import           Control.Monad.Trans.Control
 import           Data.Foldable                        (traverse_)
 import           Data.Int
 import           Data.Pool
@@ -47,13 +49,15 @@ newtype App f = App
   { runApp :: f ()
   }
 
-makeApp ::
-     (MonadIO f, Monad f, MonadBaseControl IO f, Forall (Pure f)) => Eaches (ReaderT backend f) -> Pool backend -> App f
-makeApp eaches pool =
+newtype Transactor f k = Transactor
+  { transact :: forall a. k a -> f a
+  }
+
+makeApp :: (Monad f, MonadBaseControl IO f, Forall (Pure f), MonadIO k) => Eaches k -> Transactor f k -> App f
+makeApp eaches xa =
   App $
   replicateConcurrently_ 10 $
-  withResource pool $
-  runReaderT $ do
+  transact xa $ do
     saveEach eaches (Each "foo")
     e <- getEach eaches 2
     liftIO $ print e
@@ -72,8 +76,11 @@ makeEaches =
     , saveEach = void . runReaderClassy . insert
     }
 
+makeTransactor :: MonadBaseControl IO f => Pool a -> Transactor f (ReaderT a f)
+makeTransactor pool = Transactor (withResource pool . runReaderT)
+
 runner :: IO ()
 runner =
   runStdoutLoggingT $
   withPostgresqlPool "host=localhost port=5432 user=postgres dbname=postgres password=postgres" 10 $
-  runApp . makeApp makeEaches
+  runApp . makeApp makeEaches . makeTransactor
